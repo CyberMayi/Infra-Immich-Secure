@@ -1,54 +1,51 @@
-#  Homelab - Secure Self-Hosted Application
+# Secure Self-Hosted Application
+
+> Déploiement d'une application auto-hébergée au sein d'une infrastructure virtualisée sécurisée.
 
 ## Présentation
 
-Ce projet présente le déploiement d'une application auto-hébergée (Immich) au sein d'une infrastructure virtualisée sécurisée.
+Ce projet documente le déploiement d'une application auto-hébergée (Immich) dans une infrastructure personnelle conçue pour reproduire les bonnes pratiques d'un environnement d'entreprise.
 
-L'objectif n'était pas simplement de rendre l'application accessible depuis Internet, mais de concevoir une architecture évolutive reproduisant les principes d'une infrastructure d'entreprise : séparation des rôles, segmentation réseau, contrôle des flux entrants et possibilité d'accueillir de nouveaux services.
+L'objectif ne se limite pas à rendre l'application accessible depuis Internet. L'infrastructure a été pensée pour être évolutive, segmentée et sécurisée afin de servir de base à d'autres projets d'administration systèmes, de cybersécurité et d'automatisation.
 
-Ce projet constitue l'une des briques de mon laboratoire personnel d'administration systèmes, réseaux et cybersécurité.
+Ce dépôt fait partie de mon laboratoire personnel d'administration systèmes, réseaux et cybersécurité.
 
 ---
 
 # Objectifs
 
-- Déployer une application auto-hébergée accessible depuis Internet
-- Limiter la surface d'exposition du service
-- Isoler l'infrastructure du réseau personnel
-- Centraliser le filtrage réseau
-- Mettre en place une architecture réutilisable pour d'autres applications
-- Documenter les choix techniques et les difficultés rencontrées
+- Déployer une application auto-hébergée dans un environnement virtualisé.
+- Sécuriser l'exposition du service sur Internet.
+- Isoler les services du réseau personnel.
+- Limiter la surface d'attaque des interfaces d'administration.
+- Concevoir une architecture facilement réutilisable pour d'autres applications.
+- Documenter les choix techniques et les difficultés rencontrées.
 
 ---
 
 # Architecture
 
 ```
-                     Internet
-                         │
-                    Box FAI
-               (NAT 80 / 443)
-                         │
-                    pfSense (WAN)
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-         VPN Administration     LAN 10.0.10.0/24
-                                      │
-                                Ubuntu Server
-                                      │
-                            Docker Engine
-                           ┌───────────────┐
-                           │               │
-                       Immich        Nginx Proxy Manager
+                           Internet
+                               │
+                        Box / Routeur FAI
+                               │
+                    Redirection des ports 80/443
+                               │
+                         WAN - pfSense
+                               │
+                    ┌──────────┴──────────┐
+                    │                     │
+               OpenVPN               LAN Infrastructure
+                    │                     │
+                    │               Ubuntu Server
+                    │                     │
+                    │                  Docker
+                    │                     │
+                    │          Nginx Proxy Manager
+                    │                     │
+                    └────────────► Immich
 ```
-
-Principes retenus :
-
-- pfSense constitue le point d'entrée unique de l'infrastructure
-- seules les connexions HTTP/HTTPS sont publiées
-- les conteneurs Docker ne sont jamais exposés directement
-- le reverse proxy assure la terminaison TLS et le routage vers les services
 
 ---
 
@@ -56,144 +53,198 @@ Principes retenus :
 
 | Élément | Rôle |
 |---------|------|
-| Proxmox VE | Hyperviseur |
-| pfSense | Pare-feu / Routeur |
+| Proxmox VE | Plateforme de virtualisation |
+| pfSense | Pare-feu, routage, OpenVPN |
 | Ubuntu Server | Hôte Docker |
-| Docker | Hébergement des services |
-| Nginx Proxy Manager | Reverse Proxy |
+| Docker | Conteneurisation des services |
+| Nginx Proxy Manager | Reverse Proxy et gestion HTTPS |
 | Immich | Application auto-hébergée |
 
 ---
 
 # Choix d'architecture
 
-## Virtualisation avec Proxmox
+## Virtualisation
 
-Le choix de Proxmox permet d'isoler les différents composants de l'infrastructure tout en facilitant leur administration et leur évolution.
+L'ensemble des services est hébergé sur Proxmox VE afin d'isoler les différents composants de l'infrastructure et de faciliter leur administration.
+
+Cette approche permet de faire évoluer indépendamment chaque service sans impacter les autres.
+
+---
 
 ## Pare-feu dédié
 
-L'ensemble du trafic entrant transite par pfSense afin de centraliser :
+Le trafic entrant transite exclusivement par pfSense.
 
-- le routage
-- le filtrage
-- les règles NAT
-- l'administration VPN
+Le pare-feu assure :
+
+- le routage ;
+- le NAT ;
+- le filtrage des flux ;
+- l'hébergement du serveur OpenVPN.
+
+Cette architecture centralise l'ensemble des règles de sécurité sur un point unique.
+
+---
 
 ## Segmentation réseau
 
-L'infrastructure est isolée du réseau utilisé quotidiennement.
+L'infrastructure est séparée du réseau utilisé quotidiennement.
 
 Cette séparation permet :
 
-- de limiter les impacts d'une erreur de configuration
-- d'expérimenter en toute sécurité
-- de préparer l'ajout de nouveaux services
+- d'éviter qu'une erreur de configuration impacte les postes personnels ;
+- de réaliser des expérimentations en limitant les risques ;
+- de préparer l'ajout de nouveaux services.
+
+---
 
 ## Reverse Proxy
 
-L'utilisation de Nginx Proxy Manager permet :
+Nginx Proxy Manager est utilisé comme point d'entrée unique des applications Web.
 
-- la centralisation des accès HTTP/HTTPS
-- la gestion simplifiée des certificats TLS
-- la publication de plusieurs applications derrière une même adresse IP
+Cette architecture permet :
+
+- la centralisation des accès HTTP/HTTPS ;
+- la gestion simplifiée des certificats TLS ;
+- la publication de plusieurs services derrière une même adresse IP publique.
+
+---
+
+# Contrôle des accès d'administration
+
+L'infrastructure distingue les services destinés aux utilisateurs des interfaces d'administration.
+
+Les interfaces d'administration ne sont **jamais accessibles directement depuis le réseau local**.
+
+L'administration de :
+
+- pfSense ;
+- Proxmox VE ;
+- l'interface d'administration d'Immich ;
+- des serveurs Linux (SSH) ;
+
+nécessite l'établissement préalable d'un tunnel **OpenVPN**.
+
+Cette approche repose sur le principe que le réseau local ne doit pas être considéré comme un réseau de confiance.
+
+Même en cas de compromission d'un poste connecté au réseau local, les interfaces d'administration restent inaccessibles sans authentification VPN.
+
+Cette architecture permet de :
+
+- réduire la surface d'attaque ;
+- protéger les interfaces sensibles ;
+- centraliser les accès administratifs ;
+- chiffrer toutes les connexions d'administration.
 
 ---
 
 # Difficultés rencontrées
 
-Le projet a permis de résoudre plusieurs problématiques classiques d'administration réseau.
+## Architecture réseau initiale
 
-### Mauvaise segmentation initiale
+Lors des premiers déploiements, certaines machines virtuelles étaient connectées au mauvais réseau.
 
-La machine Ubuntu était initialement connectée au réseau de la box Internet.
+Cette configuration empêchait pfSense d'assurer correctement son rôle de passerelle.
 
-Conséquence :
+### Solution
 
-- pfSense ne pouvait pas router correctement le trafic vers la VM.
-
-Solution :
-
-- création d'un bridge LAN dédié sous Proxmox ;
-- migration de la VM vers ce réseau ;
-- utilisation de pfSense comme passerelle unique.
+- création d'un réseau dédié sous Proxmox ;
+- migration des machines vers ce réseau ;
+- utilisation de pfSense comme unique routeur de l'infrastructure.
 
 ---
 
-### Double NAT
+## Publication du service
 
-L'utilisation simultanée du NAT de la box Internet et de celui de pfSense a nécessité une reconfiguration des redirections de ports afin que le trafic traverse correctement le pare-feu.
+La publication d'Immich a nécessité plusieurs ajustements concernant :
 
----
+- le NAT ;
+- le reverse proxy ;
+- les certificats TLS ;
+- la résolution DNS.
 
-### Validation des accès
-
-Les tests réalisés depuis le réseau local étaient perturbés par le hairpin NAT.
-
-La validation finale a donc été réalisée depuis un réseau externe (4G) afin de confirmer le fonctionnement réel de la publication Internet.
-
----
-
-# Résultats
-
-Le projet a permis d'obtenir une architecture répondant aux objectifs initiaux.
-
-- Application accessible publiquement en HTTPS
-- Reverse Proxy opérationnel
-- Pare-feu dédié
-- Infrastructure segmentée
-- Conteneurs non exposés directement
-- Architecture facilement extensible
+Ces difficultés ont permis de mieux comprendre les interactions entre les différents composants de l'infrastructure.
 
 ---
 
-# Compétences mobilisées
+## Validation des accès
+
+Les premiers tests réalisés depuis le réseau local ne reflétaient pas le comportement réel des accès externes.
+
+La validation finale a donc été effectuée depuis un réseau externe afin de vérifier le fonctionnement complet de la publication Internet.
+
+---
+
+# Résultat
+
+L'infrastructure répond désormais aux objectifs définis.
+
+✔ Application accessible en HTTPS
+
+✔ Reverse Proxy opérationnel
+
+✔ Pare-feu dédié
+
+✔ Infrastructure segmentée
+
+✔ Administration exclusivement via OpenVPN
+
+✔ Architecture évolutive permettant l'ajout de nouveaux services
+
+---
+
+# Compétences mises en œuvre
 
 ## Administration Systèmes
 
 - Ubuntu Server
 - Docker
-- Netplan
+- Administration Linux
 
 ## Infrastructure & Réseau
 
 - Proxmox VE
+- Virtualisation
 - Segmentation réseau
 - NAT
-- Routage
 - DNS
+- Routage
 
 ## Cybersécurité
 
 - pfSense
 - Reverse Proxy
-- TLS
-- Filtrage réseau
+- TLS / HTTPS
+- Contrôle des accès
+- VPN
+- Réduction de la surface d'attaque
 
 ---
 
 # Évolutions prévues
 
-Cette architecture constitue la base du laboratoire.
+Cette architecture constitue la base de mon laboratoire personnel.
 
 Les prochaines évolutions prévues sont :
 
 - déploiement d'une plateforme Wazuh ;
-- automatisation des audits avec n8n ;
-- intégration de workflows Python ;
-- assistance par IA locale (Ollama et LLM) pour l'analyse des résultats ;
-- hébergement de nouveaux services derrière la même architecture sécurisée.
+- automatisation des audits de sécurité avec n8n ;
+- développement d'outils Python ;
+- intégration de LLM locaux (Ollama) pour assister l'analyse et la génération de rapports ;
+- ajout de nouveaux services auto-hébergés.
 
 ---
 
 # Documentation
 
-Les étapes détaillées d'installation et de configuration sont disponibles dans le dossier `docs/`.
+La documentation détaillée est disponible dans le dossier **docs/**.
 
 - Installation de Proxmox
 - Configuration réseau
-- Netplan
-- Docker
 - pfSense
+- OpenVPN
+- Docker
 - Nginx Proxy Manager
 - Déploiement d'Immich
+- Journal des difficultés rencontrées
